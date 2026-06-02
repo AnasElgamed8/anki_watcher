@@ -35,7 +35,7 @@ except ImportError:
 
 # --- Defaults (overridden by config.json) ---
 DEFAULTS = {
-    "anki_connect_url": "http://localhost:8765",
+    "anki_connect_url": "http://127.0.0.1:8765",
     "anki_connect_version": 6,
     "cards_file_prefix": "new_cards_",
     "cards_file_extension": ".json",
@@ -159,7 +159,9 @@ class AnkiClient:
             return False
         return len(result) > 0
 
-    def add_note(self, deck_name: str, front: str, back: str, tags: list, model: str = "Basic") -> bool:
+    def add_note(
+        self, deck_name: str, front: str, back: str, tags: list, model: str = "Basic"
+    ) -> bool:
         """Add a single note to Anki."""
         note = {
             "deckName": deck_name,
@@ -228,7 +230,9 @@ def archive_file(cards_file: Path, watch_dir: Path):
     log.info(f"Archived {cards_file.name} -> archive/")
 
 
-def process_file(cards_file: Path, client: AnkiClient, config: dict, watch_dir: Path) -> bool:
+def process_file(
+    cards_file: Path, client: AnkiClient, config: dict, watch_dir: Path
+) -> bool:
     """Process a single cards file. Returns True if successful."""
     try:
         content = cards_file.read_text(encoding="utf-8").strip()
@@ -306,10 +310,16 @@ def check_and_process(watch_dir: Path, client: AnkiClient, config: dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Anki Watcher — Syncs cards from Syncthing to Anki")
+    parser = argparse.ArgumentParser(
+        description="Anki Watcher — Syncs cards from Syncthing to Anki"
+    )
     parser.add_argument("--config", type=str, default=None, help="Path to config.json")
-    parser.add_argument("--watch-dir", type=str, default=None, help="Directory to watch for cards")
-    parser.add_argument("--poll-interval", type=int, default=None, help="Seconds between checks")
+    parser.add_argument(
+        "--watch-dir", type=str, default=None, help="Directory to watch for cards"
+    )
+    parser.add_argument(
+        "--poll-interval", type=int, default=None, help="Seconds between checks"
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config) if args.config else None
@@ -329,7 +339,9 @@ def main():
     client = AnkiClient(config["anki_connect_url"], config["anki_connect_version"])
 
     log.info(f"Watching: {watch_dir}")
-    log.info(f"Cards pattern: {config['cards_file_prefix']}*{config['cards_file_extension']}")
+    log.info(
+        f"Cards pattern: {config['cards_file_prefix']}*{config['cards_file_extension']}"
+    )
     log.info(f"Poll interval: {config['poll_interval_seconds']}s")
     log.info(f"Default deck prefix: {config['default_deck_prefix']}")
     log.info(f"Default model: {config['default_model']}")
