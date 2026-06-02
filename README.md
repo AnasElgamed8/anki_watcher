@@ -60,7 +60,7 @@ All settings live in `config.json`:
 
 ```json
 {
-  "anki_connect_url": "http://localhost:8765",
+  "anki_connect_url": "http://127.0.0.1:8765",
   "anki_connect_version": 6,
   "cards_file_prefix": "new_cards_",
   "cards_file_extension": ".json",
