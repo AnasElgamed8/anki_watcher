@@ -17,7 +17,7 @@ Expects dated JSON files in the watch directory with this structure:
   }
 ]
 
-After processing each file, it is deleted.
+After processing each file, it is moved to an archive/ subfolder.
 """
 
 import json
@@ -213,17 +213,26 @@ def find_card_files(watch_dir: Path, prefix: str, extension: str) -> list:
     return [f for f in files if f.stat().st_size > 5]  # skip empty "[]\n" files
 
 
-def process_file(cards_file: Path, client: AnkiClient, config: dict) -> bool:
+def archive_file(cards_file: Path, watch_dir: Path):
+    """Move a processed card file to the archive/ subfolder."""
+    archive_dir = watch_dir / "archive"
+    archive_dir.mkdir(exist_ok=True)
+    dest = archive_dir / cards_file.name
+    cards_file.rename(dest)
+    log.info(f"Archived {cards_file.name} -> archive/")
+
+
+def process_file(cards_file: Path, client: AnkiClient, config: dict, watch_dir: Path) -> bool:
     """Process a single cards file. Returns True if successful."""
     try:
         content = cards_file.read_text(encoding="utf-8").strip()
         if not content or content == "[]":
-            cards_file.unlink()
+            archive_file(cards_file, watch_dir)
             return True
 
         cards = json.loads(content)
         if not isinstance(cards, list) or len(cards) == 0:
-            cards_file.unlink()
+            archive_file(cards_file, watch_dir)
             return True
 
     except json.JSONDecodeError as e:
@@ -233,9 +242,8 @@ def process_file(cards_file: Path, client: AnkiClient, config: dict) -> bool:
     log.info(f"Processing {cards_file.name}: {len(cards)} card(s)")
     stats = process_cards(cards, client, config)
 
-    # Delete the file after processing
-    cards_file.unlink()
-    log.info(f"Deleted {cards_file.name}")
+    # Archive the file after processing
+    archive_file(cards_file, watch_dir)
 
     log.info(
         f"  -> {stats['added']} added, {stats['skipped']} skipped (duplicates), "
@@ -263,12 +271,12 @@ def check_and_process(watch_dir: Path, client: AnkiClient, config: dict):
         try:
             content = cards_file.read_text(encoding="utf-8").strip()
             if not content or content == "[]":
-                cards_file.unlink()
+                archive_file(cards_file, watch_dir)
                 continue
 
             cards = json.loads(content)
             if not isinstance(cards, list) or len(cards) == 0:
-                cards_file.unlink()
+                archive_file(cards_file, watch_dir)
                 continue
 
             log.info(f"Processing {cards_file.name}: {len(cards)} card(s)")
@@ -277,8 +285,7 @@ def check_and_process(watch_dir: Path, client: AnkiClient, config: dict):
             total_skipped += stats["skipped"]
             total_failed += stats["failed"]
 
-            cards_file.unlink()
-            log.info(f"Deleted {cards_file.name}")
+            archive_file(cards_file, watch_dir)
 
         except json.JSONDecodeError as e:
             log.error(f"Invalid JSON in {cards_file}: {e}")
