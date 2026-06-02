@@ -1,0 +1,10 @@
+{
+  "anki_connect_url": "http://localhost:8765",
+  "anki_connect_version": 6,
+  "cards_filename": "new_cards.json",
+  "default_deck_prefix": "Reading",
+  "default_model": "Basic",
+  "default_tags": ["reading"],
+  "poll_interval_seconds": 30,
+  "watch_dir": null
+}

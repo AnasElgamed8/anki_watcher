@@ -1,54 +1,155 @@
-# Anki Watcher — Setup Guide
+# Anki Watcher
 
-## What This Does
-The cron job on the server processes your book vocabulary nightly and writes `new_cards.json` to your Obsidian folder. Syncthing syncs it to your local machine. This script watches for that file and pushes the cards into Anki via AnkiConnect.
+A lightweight bridge between Syncthing and Anki. Watches a synced folder for new vocabulary cards and pushes them to Anki via AnkiConnect.
 
-**Result:** You open Anki → cards are already there.
+## How It Works
+
+```
+Server (cron job)         Syncthing            Your Machine
+┌─────────────────┐      ┌───────┐       ┌──────────────────┐
+│ Processes vocab, │─────▶│ Sync  │─────▶│ new_cards.json   │
+│ writes cards.json│      └───────┘       │ appears in       │
+└─────────────────┘                       │ Obsidian folder  │
+                                          └────────┬─────────┘
+                                                   │
+                                        anki_watcher.py detects it
+                                                   │
+                                                   ▼
+                                          ┌──────────────────┐
+                                          │ AnkiConnect API  │
+                                          │ (localhost:8765)  │
+                                          └────────┬─────────┘
+                                                   │
+                                                   ▼
+                                          ┌──────────────────┐
+                                          │ Cards in Anki     │
+                                          └──────────────────┘
+```
 
 ## Prerequisites
-- Anki Desktop installed and running (sometimes)
-- AnkiConnect add-on installed in Anki (`Tools → Add-ons → Get Add-ons → Code: 2055492159`)
-- Python 3.8+ (`python3 --version`)
-- Syncthing syncing your Obsidian vault
 
-## One-Time Setup (on your local machine)
+- **Anki Desktop** installed ([ankiweb.net](https://apps.ankiweb.net/))
+- **AnkiConnect** add-on (`Tools → Add-ons → Get Add-ons → Code: 2055492159`)
+- **Python 3.8+**
+- **Syncthing** syncing your Obsidian vault
+- **requests** library (`pip install requests`)
 
-### 1. Install the dependency
+## Quick Start
+
 ```bash
+# Clone the repo
+git clone https://github.com/AnasElgamed8/anki_watcher.git
+cd anki_watcher
+
+# Install dependency
 pip install requests
+
+# Edit config.json to match your setup
+nano config.json
+
+# Run
+python3 anki_watcher.py
 ```
 
-### 2. Copy the watcher script
-Copy `anki_watcher.py` to your local Obsidian vault:
-```bash
-# From the projects folder, copy to your synced Obsidian directory
-cp anki_watcher.py ~/Obsidian/AI/English/Anki/anki_watcher.py
-```
-(Adjust the path if your Obsidian vault is in a different location)
+## Configuration
 
-### 3. Test it manually
-```bash
-python3 ~/Obsidian/AI/English/Anki/anki_watcher.py
-```
-You should see:
-```
-Watching: /home/YOU/Obsidian/AI/English/Anki
-Poll interval: 30s
-Waiting for cards...
-```
-Open Anki, then create a test card:
-```bash
-echo '[{"deck": "Reading::Test", "front": "hello", "back": "Definition: a greeting", "tags": ["test"]}]' > ~/Obsidian/AI/English/Anki/new_cards.json
-```
-Within 30 seconds, the card should appear in Anki. Press Ctrl+C to stop.
+All settings live in `config.json`:
 
-### 4. Set up the systemd service (auto-start)
-```bash
-# Copy the service file
-cp anki-watcher.service ~/.config/systemd/user/anki-watcher.service
+```json
+{
+  "anki_connect_url": "http://localhost:8765",
+  "anki_connect_version": 6,
+  "cards_filename": "new_cards.json",
+  "default_deck_prefix": "Reading",
+  "default_model": "Basic",
+  "default_tags": ["reading"],
+  "poll_interval_seconds": 30,
+  "watch_dir": null
+}
+```
 
-# Edit the ExecStart path if your Obsidian vault is not at ~/Obsidian
-# The %h variable = your home directory
+| Key | Description | Default |
+|-----|-------------|---------|
+| `anki_connect_url` | AnkiConnect API endpoint | `http://localhost:8765` |
+| `anki_connect_version` | AnkiConnect protocol version | `6` |
+| `cards_filename` | Name of the JSON file to watch for | `new_cards.json` |
+| `default_deck_prefix` | Default parent deck name | `Reading` |
+| `default_model` | Anki note type to use | `Basic` |
+| `default_tags` | Tags applied to every card | `["reading"]` |
+| `poll_interval_seconds` | How often to check for new cards | `30` |
+| `watch_dir` | Absolute path to watch directory. `null` = auto-detect | `null` |
+
+### Watch Directory Auto-Detection
+
+If `watch_dir` is `null`, the script searches these locations in order:
+
+1. `~/Obsidian/AI/English/Anki/`
+2. `~/obsidian/AI/English/Anki/`
+3. `/opt/data/Obsidian/AI/English/Anki/`
+
+Override with `--watch-dir` CLI arg or set `watch_dir` in config.
+
+## CLI Usage
+
+```bash
+# Use default config (auto-detect everything)
+python3 anki_watcher.py
+
+# Specify config file
+python3 anki_watcher.py --config /path/to/config.json
+
+# Override watch directory
+python3 anki_watcher.py --watch-dir /path/to/Obsidian/AI/English/Anki
+
+# Override poll interval
+python3 anki_watcher.py --poll-interval 60
+```
+
+## Card Format
+
+Cards are JSON objects in an array:
+
+```json
+[
+  {
+    "deck": "Reading::Crime and Punishment",
+    "front": "solace",
+    "back": "Definition: comfort or consolation in a time of distress.\n\nUsage: \"He found solace in the quiet of the empty church.\"",
+    "tags": ["reading", "crime-and-punishment"]
+  }
+]
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `deck` | No | Full deck path. Uses `{default_deck_prefix}::Unknown` if omitted |
+| `front` | Yes | The vocabulary word (card front) |
+| `back` | Yes | Definition + usage example (card back) |
+| `tags` | No | List of tags. Uses `default_tags` if omitted |
+
+### Duplicate Handling
+
+Before adding a card, the watcher queries AnkiConnect for existing notes with the same `Front` field in the same deck. If a match is found, the card is skipped.
+
+## Systemd Service (Auto-Start)
+
+Run the watcher as a background service that starts on boot:
+
+```bash
+# Copy files to your config directory
+mkdir -p ~/.config/anki-watcher
+cp config.json ~/.config/anki-watcher/config.json
+cp anki_watcher.py ~/.config/anki-watcher/anki_watcher.py
+
+# Edit the config for your local paths
+nano ~/.config/anki-watcher/config.json
+
+# Install the service
+cp anki-watcher.service ~/.config/systemd/user/
+
+# Edit the service file to point to your install
+# Update the ExecStart path if needed
+nano ~/.config/systemd/user/anki-watcher.service
 
 # Enable and start
 systemctl --user daemon-reload
@@ -57,51 +158,31 @@ systemctl --user start anki-watcher.service
 
 # Check status
 systemctl --user status anki-watcher.service
-```
 
-### 5. Verify
-```bash
-# Check logs
+# View logs
 journalctl --user -u anki-watcher -f
-```
-
-## How It Works
-```
-Server (11:30 PM)          Syncthing           Your Machine
-┌─────────────────┐       ┌───────┐       ┌──────────────────┐
-│ Cron processes   │──────▶│ Sync  │──────▶│ new_cards.json   │
-│ vocab, writes    │       │       │       │ appears in       │
-│ new_cards.json   │       └───────┘       │ Obsidian folder  │
-└─────────────────┘                        └────────┬─────────┘
-                                                    │
-                                         anki_watcher.py detects it
-                                                    │
-                                                    ▼
-                                         ┌──────────────────┐
-                                         │ AnkiConnect API  │
-                                         │ (localhost:8765)  │
-                                         └────────┬─────────┘
-                                                    │
-                                                    ▼
-                                         ┌──────────────────┐
-                                         │ Cards appear      │
-                                         │ in Anki!          │
-                                         └──────────────────┘
 ```
 
 ## Troubleshooting
 
-### "Cannot connect to AnkiConnect"
-- Make sure Anki is open
-- Make sure AnkiConnect add-on is installed (`Tools → Add-ons`)
-- AnkiConnect runs on `http://localhost:8765`
+| Problem | Solution |
+|---------|----------|
+| `Cannot connect to AnkiConnect` | Make sure Anki is open and AnkiConnect is installed |
+| Cards not appearing | Check if `new_cards.json` exists and contains valid JSON |
+| `No config file found` | Copy `config.json` next to the script or to `~/.config/anki-watcher/` |
+| Service won't start | Check `journalctl --user -u anki-watcher` for errors |
+| Wrong watch directory | Set `watch_dir` explicitly in `config.json` |
 
-### Cards not appearing
-- Check if `new_cards.json` exists in `~/Obsidian/AI/English/Anki/`
-- Check watcher logs: `journalctl --user -u anki-watcher -f`
-- Verify the JSON is valid: `python3 -c "import json; json.load(open('new_cards.json'))"`
+## Project Structure
 
-### Systemd service not starting
-- Check if the path in the service file matches your Obsidian vault location
-- `systemctl --user status anki-watcher.service` for error details
-- Make sure `requests` is installed for the system Python: `python3 -c "import requests"`
+```
+anki_watcher/
+├── anki_watcher.py       # Main script
+├── config.json           # Configuration
+├── anki-watcher.service  # systemd user service
+└── README.md             # This file
+```
+
+## License
+
+MIT

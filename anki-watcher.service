@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 %h/Obsidian/AI/English/Anki/anki_watcher.py --watch-dir %h/Obsidian/AI/English/Anki
+ExecStart=/usr/bin/python3 %h/.config/anki-watcher/anki_watcher.py --config %h/.config/anki-watcher/config.json
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
