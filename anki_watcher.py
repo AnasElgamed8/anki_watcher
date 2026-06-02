@@ -110,6 +110,8 @@ class AnkiClient:
     def __init__(self, url: str, version: int):
         self.url = url
         self.version = version
+        self._known_decks: set = set()
+        self._session = requests.Session()
 
     def request(self, action: str, params: dict = None) -> dict:
         """Send a request to AnkiConnect."""
@@ -118,7 +120,7 @@ class AnkiClient:
             payload["params"] = params
 
         try:
-            resp = requests.post(self.url, json=payload, timeout=10)
+            resp = self._session.post(self.url, json=payload, timeout=10)
             resp.raise_for_status()
             result = resp.json()
             if result.get("error"):
@@ -133,15 +135,19 @@ class AnkiClient:
             return None
 
     def ensure_deck(self, deck_name: str) -> bool:
-        """Create a deck if it doesn't exist."""
+        """Create a deck if it doesn't exist (cached)."""
+        if deck_name in self._known_decks:
+            return True
         decks = self.request("deckNames")
         if decks is None:
             return False
-        if deck_name in decks:
+        self._known_decks = set(decks)
+        if deck_name in self._known_decks:
             return True
         result = self.request("createDeck", {"deck": deck_name})
         if result is not None:
             log.info(f"Created deck: {deck_name}")
+            self._known_decks.add(deck_name)
             return True
         return False
 
