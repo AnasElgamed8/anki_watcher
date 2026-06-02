@@ -1,30 +1,33 @@
 # Anki Watcher
 
-A lightweight bridge between Syncthing and Anki. Watches a synced folder for new vocabulary cards and pushes them to Anki via AnkiConnect.
+A lightweight bridge between Syncthing and Anki. Watches a synced folder for dated vocabulary card files and pushes them to Anki via AnkiConnect.
 
 ## How It Works
 
 ```
 Server (cron job)         Syncthing            Your Machine
-┌─────────────────┐      ┌───────┐       ┌──────────────────┐
-│ Processes vocab, │─────▶│ Sync  │─────▶│ new_cards.json   │
-│ writes cards.json│      └───────┘       │ appears in       │
-└─────────────────┘                       │ Obsidian folder  │
-                                          └────────┬─────────┘
-                                                   │
-                                        anki_watcher.py detects it
-                                                   │
-                                                   ▼
-                                          ┌──────────────────┐
-                                          │ AnkiConnect API  │
-                                          │ (localhost:8765)  │
-                                          └────────┬─────────┘
-                                                   │
-                                                   ▼
-                                          ┌──────────────────┐
-                                          │ Cards in Anki     │
-                                          └──────────────────┘
+┌─────────────────┐      ┌───────┐       ┌──────────────────────┐
+│ Processes vocab, │─────▶│ Sync  │─────▶│ new_cards_2026-06-02 │
+│ writes dated     │      └───────┘       │ .json appears in     │
+│ card files       │                      │ Obsidian folder      │
+└─────────────────┘                      └──────────┬───────────┘
+                                                    │
+                                         anki_watcher.py detects it
+                                                    │
+                                                    ▼
+                                         ┌──────────────────────┐
+                                         │ AnkiConnect API      │
+                                         │ (localhost:8765)      │
+                                         └──────────┬───────────┘
+                                                    │
+                                                    ▼
+                                         ┌──────────────────────┐
+                                         │ Cards in Anki        │
+                                         │ (file deleted)       │
+                                         └──────────────────────┘
 ```
+
+Each day gets its own file: `new_cards_YYYY-MM-DD.json`. The watcher processes all pending files and deletes each one after pushing to Anki. No race conditions, no overwriting, no lost cards.
 
 ## Prerequisites
 
@@ -59,7 +62,8 @@ All settings live in `config.json`:
 {
   "anki_connect_url": "http://localhost:8765",
   "anki_connect_version": 6,
-  "cards_filename": "new_cards.json",
+  "cards_file_prefix": "new_cards_",
+  "cards_file_extension": ".json",
   "default_deck_prefix": "Reading",
   "default_model": "Basic",
   "default_tags": ["reading"],
@@ -72,7 +76,8 @@ All settings live in `config.json`:
 |-----|-------------|---------|
 | `anki_connect_url` | AnkiConnect API endpoint | `http://localhost:8765` |
 | `anki_connect_version` | AnkiConnect protocol version | `6` |
-| `cards_filename` | Name of the JSON file to watch for | `new_cards.json` |
+| `cards_file_prefix` | Prefix for card files to watch | `new_cards_` |
+| `cards_file_extension` | Extension for card files | `.json` |
 | `default_deck_prefix` | Default parent deck name | `Reading` |
 | `default_model` | Anki note type to use | `Basic` |
 | `default_tags` | Tags applied to every card | `["reading"]` |
@@ -107,7 +112,7 @@ python3 anki_watcher.py --poll-interval 60
 
 ## Card Format
 
-Cards are JSON objects in an array:
+Cards are JSON objects in dated files (`new_cards_YYYY-MM-DD.json`):
 
 ```json
 [
@@ -148,7 +153,6 @@ nano ~/.config/anki-watcher/config.json
 cp anki-watcher.service ~/.config/systemd/user/
 
 # Edit the service file to point to your install
-# Update the ExecStart path if needed
 nano ~/.config/systemd/user/anki-watcher.service
 
 # Enable and start
@@ -168,10 +172,11 @@ journalctl --user -u anki-watcher -f
 | Problem | Solution |
 |---------|----------|
 | `Cannot connect to AnkiConnect` | Make sure Anki is open and AnkiConnect is installed |
-| Cards not appearing | Check if `new_cards.json` exists and contains valid JSON |
+| Cards not appearing | Check if dated files exist in the Anki folder |
 | `No config file found` | Copy `config.json` next to the script or to `~/.config/anki-watcher/` |
 | Service won't start | Check `journalctl --user -u anki-watcher` for errors |
 | Wrong watch directory | Set `watch_dir` explicitly in `config.json` |
+| Old files piling up | The watcher deletes files after processing. If files remain, check logs for errors |
 
 ## Project Structure
 

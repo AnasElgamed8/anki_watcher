@@ -1,7 +1,8 @@
 {
   "anki_connect_url": "http://localhost:8765",
   "anki_connect_version": 6,
-  "cards_filename": "new_cards.json",
+  "cards_file_prefix": "new_cards_",
+  "cards_file_extension": ".json",
   "default_deck_prefix": "Reading",
   "default_model": "Basic",
   "default_tags": ["reading"],

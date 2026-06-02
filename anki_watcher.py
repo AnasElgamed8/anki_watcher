@@ -6,7 +6,8 @@ and pushes them to Anki via AnkiConnect.
 Usage:
   python3 anki_watcher.py [--config /path/to/config.json] [--watch-dir /path/to/watch]
 
-Expects new_cards.json in the watch directory with this structure:
+Expects dated JSON files in the watch directory with this structure:
+  new_cards_YYYY-MM-DD.json
 [
   {
     "deck": "Reading::Crime and Punishment",
@@ -16,7 +17,7 @@ Expects new_cards.json in the watch directory with this structure:
   }
 ]
 
-After processing, the file is cleared to [].
+After processing each file, it is deleted.
 """
 
 import json
@@ -36,7 +37,8 @@ except ImportError:
 DEFAULTS = {
     "anki_connect_url": "http://localhost:8765",
     "anki_connect_version": 6,
-    "cards_filename": "new_cards.json",
+    "cards_file_prefix": "new_cards_",
+    "cards_file_extension": ".json",
     "default_deck_prefix": "Reading",
     "default_model": "Basic",
     "default_tags": ["reading"],
@@ -57,11 +59,9 @@ def load_config(config_path: Path = None) -> dict:
     """Load config from file, falling back to defaults."""
     config = dict(DEFAULTS)
 
-    # Find config file
     if config_path and config_path.exists():
         found = config_path
     else:
-        # Search relative to script location
         script_dir = Path(__file__).parent
         candidates = [
             script_dir / "config.json",
@@ -72,7 +72,6 @@ def load_config(config_path: Path = None) -> dict:
     if found:
         try:
             user_config = json.loads(found.read_text(encoding="utf-8"))
-            # Merge: user values override defaults
             for key, value in user_config.items():
                 if key in config:
                     config[key] = value
@@ -87,15 +86,12 @@ def load_config(config_path: Path = None) -> dict:
 
 def resolve_watch_dir(config: dict, cli_override: str = None) -> Path:
     """Resolve the watch directory from CLI arg, config, or auto-detection."""
-    # CLI arg takes priority
     if cli_override:
         return Path(cli_override)
 
-    # Config value
     if config.get("watch_dir"):
         return Path(config["watch_dir"])
 
-    # Auto-detect from common Obsidian vault locations
     candidates = [
         Path.home() / "Obsidian" / "AI" / "English" / "Anki",
         Path.home() / "obsidian" / "AI" / "English" / "Anki",
@@ -210,33 +206,90 @@ def process_cards(cards: list, client: AnkiClient, config: dict) -> dict:
     return stats
 
 
-def check_and_process(watch_dir: Path, cards_filename: str, client: AnkiClient, config: dict):
-    """Check for new cards and process them."""
-    cards_file = watch_dir / cards_filename
+def find_card_files(watch_dir: Path, prefix: str, extension: str) -> list:
+    """Find all pending card files (new_cards_*.json)."""
+    pattern = f"{prefix}*{extension}"
+    files = sorted(watch_dir.glob(pattern))
+    return [f for f in files if f.stat().st_size > 5]  # skip empty "[]\n" files
 
-    if not cards_file.exists():
-        return
 
+def process_file(cards_file: Path, client: AnkiClient, config: dict) -> bool:
+    """Process a single cards file. Returns True if successful."""
     try:
         content = cards_file.read_text(encoding="utf-8").strip()
         if not content or content == "[]":
-            return
+            cards_file.unlink()
+            return True
+
         cards = json.loads(content)
         if not isinstance(cards, list) or len(cards) == 0:
-            cards_file.write_text("[]\n", encoding="utf-8")
-            return
+            cards_file.unlink()
+            return True
+
     except json.JSONDecodeError as e:
         log.error(f"Invalid JSON in {cards_file}: {e}")
-        return
+        return False
 
-    log.info(f"Found {len(cards)} new card(s) to process")
+    log.info(f"Processing {cards_file.name}: {len(cards)} card(s)")
     stats = process_cards(cards, client, config)
-    cards_file.write_text("[]\n", encoding="utf-8")
+
+    # Delete the file after processing
+    cards_file.unlink()
+    log.info(f"Deleted {cards_file.name}")
 
     log.info(
-        f"Done: {stats['added']} added, {stats['skipped']} skipped (duplicates), "
+        f"  -> {stats['added']} added, {stats['skipped']} skipped (duplicates), "
         f"{stats['failed']} failed"
     )
+    return True
+
+
+def check_and_process(watch_dir: Path, client: AnkiClient, config: dict):
+    """Check for all pending card files and process them."""
+    prefix = config["cards_file_prefix"]
+    extension = config["cards_file_extension"]
+
+    files = find_card_files(watch_dir, prefix, extension)
+    if not files:
+        return
+
+    log.info(f"Found {len(files)} pending card file(s)")
+
+    total_added = 0
+    total_skipped = 0
+    total_failed = 0
+
+    for cards_file in files:
+        try:
+            content = cards_file.read_text(encoding="utf-8").strip()
+            if not content or content == "[]":
+                cards_file.unlink()
+                continue
+
+            cards = json.loads(content)
+            if not isinstance(cards, list) or len(cards) == 0:
+                cards_file.unlink()
+                continue
+
+            log.info(f"Processing {cards_file.name}: {len(cards)} card(s)")
+            stats = process_cards(cards, client, config)
+            total_added += stats["added"]
+            total_skipped += stats["skipped"]
+            total_failed += stats["failed"]
+
+            cards_file.unlink()
+            log.info(f"Deleted {cards_file.name}")
+
+        except json.JSONDecodeError as e:
+            log.error(f"Invalid JSON in {cards_file}: {e}")
+        except Exception as e:
+            log.error(f"Error processing {cards_file}: {e}")
+
+    if total_added + total_skipped + total_failed > 0:
+        log.info(
+            f"Batch complete: {total_added} added, {total_skipped} skipped, "
+            f"{total_failed} failed across {len(files)} file(s)"
+        )
 
 
 def main():
@@ -246,15 +299,12 @@ def main():
     parser.add_argument("--poll-interval", type=int, default=None, help="Seconds between checks")
     args = parser.parse_args()
 
-    # Load config
     config_path = Path(args.config) if args.config else None
     config = load_config(config_path)
 
-    # CLI overrides
     if args.poll_interval is not None:
         config["poll_interval_seconds"] = args.poll_interval
 
-    # Resolve watch directory
     watch_dir = resolve_watch_dir(config, args.watch_dir)
     if watch_dir is None:
         log.error(
@@ -263,25 +313,22 @@ def main():
         )
         sys.exit(1)
 
-    # Init Anki client
     client = AnkiClient(config["anki_connect_url"], config["anki_connect_version"])
 
     log.info(f"Watching: {watch_dir}")
-    log.info(f"Cards file: {config['cards_filename']}")
+    log.info(f"Cards pattern: {config['cards_file_prefix']}*{config['cards_file_extension']}")
     log.info(f"Poll interval: {config['poll_interval_seconds']}s")
     log.info(f"Default deck prefix: {config['default_deck_prefix']}")
     log.info(f"Default model: {config['default_model']}")
 
-    # Test connection on startup
     if client.is_connected():
         log.info("AnkiConnect connected")
     else:
         log.warning("AnkiConnect not reachable — will retry when Anki is open")
 
-    # Main loop
     while True:
         try:
-            check_and_process(watch_dir, config["cards_filename"], client, config)
+            check_and_process(watch_dir, client, config)
             time.sleep(config["poll_interval_seconds"])
         except KeyboardInterrupt:
             log.info("Shutting down")
