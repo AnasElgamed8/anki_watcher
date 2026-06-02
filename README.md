@@ -23,7 +23,7 @@ Server (cron job)         Syncthing            Your Machine
                                                     ▼
                                          ┌──────────────────────┐
                                          │ Cards in Anki        │
-                                         │ (file deleted)       │
+                                         │ (archived)           │
                                          └──────────────────────┘
 ```
 
@@ -176,7 +176,7 @@ journalctl --user -u anki-watcher -f
 | `No config file found` | Copy `config.json` next to the script or to `~/.config/anki-watcher/` |
 | Service won't start | Check `journalctl --user -u anki-watcher` for errors |
 | Wrong watch directory | Set `watch_dir` explicitly in `config.json` |
-| Old files piling up | The watcher deletes files after processing. If files remain, check logs for errors |
+| Old files piling up | Processed files are moved to `archive/`. If pending files remain, check logs for errors |
 
 ## Project Structure
 
