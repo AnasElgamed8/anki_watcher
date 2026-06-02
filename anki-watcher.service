@@ -1,0 +1,14 @@
+[Unit]
+Description=Anki Watcher — Syncs vocabulary cards from Syncthing to Anki
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/Obsidian/AI/English/Anki/anki_watcher.py --watch-dir %h/Obsidian/AI/English/Anki
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
