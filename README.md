@@ -17,7 +17,7 @@ Server (cron job)         Syncthing            Your Machine
                                                     ▼
                                          ┌──────────────────────┐
                                          │ AnkiConnect API      │
-                                         │ (localhost:8765)      │
+                                         │ (127.0.0.1:8765)      │
                                          └──────────┬───────────┘
                                                     │
                                                     ▼
@@ -74,7 +74,7 @@ All settings live in `config.json`:
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `anki_connect_url` | AnkiConnect API endpoint | `http://localhost:8765` |
+| `anki_connect_url` | AnkiConnect API endpoint | `http://127.0.0.1:8765` |
 | `anki_connect_version` | AnkiConnect protocol version | `6` |
 | `cards_file_prefix` | Prefix for card files to watch | `new_cards_` |
 | `cards_file_extension` | Extension for card files | `.json` |
